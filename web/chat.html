@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        
+        .connection-status {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .connecting {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .chat-container {
+            display: flex;
+            height: 60vh;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .users-panel {
+            width: 25%;
+            background-color: #f8f9fa;
+            border-right: 1px solid #ddd;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        
+        .chat-messages {
+            width: 75%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .messages-container {
+            flex-grow: 1;
+            padding: 15px;
+            overflow-y: auto;
+            background-color: #fff;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            max-width: 80%;
+        }
+        
+        .system-message {
+            background-color: #e2e3e5;
+            color: #383d41;
+            font-style: italic;
+            margin-left: auto;
+            margin-right: auto;
+            text-align: center;
+            max-width: 100%;
+        }
+        
+        .user-message {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            margin-right: auto;
+        }
+        
+        .own-message {
+            background-color: #d4edda;
+            color: #155724;
+            margin-left: auto;
+        }
+        
+        .message-header {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .message-content {
+            word-wrap: break-word;
+        }
+        
+        .input-container {
+            display: flex;
+            margin-top: 20px;
+        }
+        
+        input, button {
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        input[type="text"] {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-Time Chat</h1>
+        
+        <div id="connectionStatus" class="connection-status disconnected">
+            Disconnected
+        </div>
+        
+        <div class="user-info">
+            <input type="text" id="usernameInput" placeholder="Enter your username" value="User">
+        </div>
+        
+        <div class="chat-container">
+            <div class="users-panel">
+                <h3>Online Users</h3>
+                <div id="usersList">
+                    <p>Connecting...</p>
+                </div>
+            </div>
+            <div class="chat-messages">
+                <div id="messagesContainer" class="messages-container">
+                    <div class="message system-message">
+                        <div class="message-content">Welcome to the chat! Connecting...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="input-container">
+            <input type="text" id="messageInput" placeholder="Type your message..." disabled>
+            <button id="sendButton" disabled>Send</button>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM elements
+            const connectionStatus = document.getElementById('connectionStatus');
+            const messagesContainer = document.getElementById('messagesContainer');
+            const usersList = document.getElementById('usersList');
+            const usernameInput = document.getElementById('usernameInput');
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+            
+            // Get the WebSocket server URL
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.hostname || 'localhost';
+            const wsUrl = `${protocol}//${host}:8001`;
+            
+            let socket;
+            let reconnectAttempts = 0;
+            const maxReconnectAttempts = 5;
+            
+            function connect() {
+                // Update UI
+                connectionStatus.className = 'connection-status connecting';
+                connectionStatus.textContent = 'Connecting...';
+                
+                // Create WebSocket connection
+                socket = new WebSocket(wsUrl);
+                
+                // Connection opened
+                socket.addEventListener('open', function(event) {
+                    // Update UI
+                    connectionStatus.className = 'connection-status connected';
+                    connectionStatus.textContent = 'Connected';
+                    messageInput.disabled = false;
+                    sendButton.disabled = false;
+                    reconnectAttempts = 0;
+                    
+                    // Add system message
+                    addMessage({
+                        type: 'system',
+                        message: 'Connected to the chat server.'
+                    });
+                });
+                
+                // Listen for messages
+                socket.addEventListener('message', function(event) {
+                    const data = JSON.parse(event.data);
+                    addMessage(data);
+                });
+                
+                // Connection closed
+                socket.addEventListener('close', function(event) {
+                    messageInput.disabled = true;
+                    sendButton.disabled = true;
+                    
+                    connectionStatus.className = 'connection-status disconnected';
+                    connectionStatus.textContent = 'Disconnected';
+                    
+                    addMessage({
+                        type: 'system',
+                        message: 'Disconnected from the server.'
+                    });
+                    
+                    // Try to reconnect
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        addMessage({
+                            type: 'system',
+                            message: `Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`
+                        });
+                        setTimeout(connect, 3000);
+                    } else {
+                        addMessage({
+                            type: 'system',
+                            message: 'Failed to reconnect after multiple attempts.'
+                        });
+                    }
+                });
+                
+                // Connection error
+                socket.addEventListener('error', function(event) {
+                    console.error('WebSocket error:', event);
+                    addMessage({
+                        type: 'system',
+                        message: 'Connection error. See console for details.'
+                    });
+                });
+            }
+            
+            // Function to add a message to the chat
+            function addMessage(data) {
+                const messageElement = document.createElement('div');
+                
+                if (data.type === 'system') {
+                    messageElement.className = 'message system-message';
+                    messageElement.innerHTML = `
+                        <div class="message-content">${data.message}</div>
+                    `;
+                } else if (data.type === 'chat') {
+                    // Check if the message is from the current user
+                    const isOwnMessage = data.username === usernameInput.value;
+                    messageElement.className = isOwnMessage ? 'message own-message' : 'message user-message';
+                    
+                    messageElement.innerHTML = `
+                        <div class="message-header">${data.username}</div>
+                        <div class="message-content">${data.message}</div>
+                    `;
+                } else if (data.type === 'error') {
+                    messageElement.className = 'message system-message';
+                    messageElement.innerHTML = `
+                        <div class="message-content">Error: ${data.message}</div>
+                    `;
+                }
+                
+                messagesContainer.appendChild(messageElement);
+                
+                // Scroll to the bottom
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            // Send message function
+            function sendMessage() {
+                const message = messageInput.value.trim();
+                const username = usernameInput.value.trim() || 'Anonymous';
+                
+                if (message && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({
+                        username: username,
+                        message: message
+                    }));
+                    
+                    // Clear input
+                    messageInput.value = '';
+                }
+            }
+            
+            // Event listeners
+            sendButton.addEventListener('click', sendMessage);
+            
+            messageInput.addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // Initial connection
+            connect();
+        });
+    </script>
+</body>
+</html>
