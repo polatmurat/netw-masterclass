@@ -45,7 +45,7 @@ class ChatHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             
         return http.server.SimpleHTTPRequestHandler.do_GET(self)
 
-async def handler(websocket, path):
+async def handler(websocket):
     """Handle WebSocket connections"""
     # Client connected
     client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
